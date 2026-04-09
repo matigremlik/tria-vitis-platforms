@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Tue, 10 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: reuse XrtDeviceHandle CU handles in XrtCu
+
+Avoid opening duplicate xcl handles/contexts in XrtCu. Reuse per-CU handles
+already created and context-opened by XrtDeviceHandleImp.
+
+This prevents BO/context mismatches across duplicated legacy-API shim objects
+and avoids runtime failures seen as xclAllocBO/xclMapBO errors on edge targets.
+
+Upstream-Status: Inappropriate [platform compatibility]
+---
+ dpu-controller/src/xrt_cu.cpp | 25 +------------------------
+ 1 file changed, 1 insertion(+), 24 deletions(-)
+
+--- a/dpu-controller/src/xrt_cu.cpp
++++ b/dpu-controller/src/xrt_cu.cpp
+@@ -38,8 +38,7 @@
+   auto num_of_cus = handle_->get_num_of_cus(cu_name_);
+   bo_handles_.reserve(num_of_cus);
+   for (auto idx = 0u; idx < num_of_cus; ++idx) {
+-    auto xcl_handle =
+-        xclOpen(handle_->get_device_id(cu_name_, idx), NULL, XCL_INFO);
++    auto xcl_handle = handle_->get_handle(cu_name_, idx);
+     auto bo_handle = xclAllocBO(xcl_handle, 4096, DOMAIN, XCL_BO_FLAGS_EXECBUF);
+     auto bo_addr = xclMapBO(xcl_handle, bo_handle, true);
+     auto cu_index = handle_->get_cu_index(cu_name_, idx);
+@@ -54,23 +53,7 @@
+     auto cu_full_name = handle_->get_cu_full_name(cu_name_, idx);
+     auto cu_uuid = handle_->get_uuid(cu_name_, idx);
+     UNI_LOG_CHECK(bo_addr != nullptr, VART_XRT_NULL_PTR);
+-    auto r = xclOpenContext(xcl_handle, &cu_uuid[0], cu_index, true);
+-    PCHECK(r == 0) << "cannot open context! "
+-                   << "cu_index " << cu_index << " "      //
+-                   << "cu_addr " << cu_addr << " "        //
+-                   << "fingerprint " << std::hex << "0x"  //
+-                   << cu_fingerprint << std::dec << " "   //
+-        ;
+-    // dpu read-only register range [0x10,0x200)
+-#ifdef HAS_xclIPSetReadRange
+-    r = xclIPSetReadRange(xcl_handle, cu_index, 0x10, 0x1F0);
+-    PCHECK(r == 0) << "cannot set read range! "
+-                   << "cu_index " << cu_index << " "      //
+-                   << "cu_addr " << cu_addr << " "        //
+-                   << "fingerprint " << std::hex << "0x"  //
+-                   << cu_fingerprint << std::dec << " "   //
+-        ;
+-#endif
++    // Reuse CU contexts opened by XrtDeviceHandleImp for this handle.
+     LOG_IF(INFO, ENV_PARAM(DEBUG_XRT_CU))
+         << "idx " << idx << " "              //
+         << "handle " << xcl_handle << " "    //
+@@ -275,15 +258,7 @@
+         << "core_id " << x.core_id << " "                                    //
+         << "fingerprint 0x" << std::hex << x.fingerprint << std::dec << " "  //
+         ;
+-    auto uuid = x.uuid;
+-    auto r = xclCloseContext(x.handle, &uuid[0], x.cu_index);
+-    PCHECK(r == 0) << "cannot close context! "
+-                   << " cu_mask " << x.cu_mask    //
+-                   << " cu_index " << x.cu_index  //
+-                   << " cu_addr " << std::hex << "0x" << x.cu_addr
+-                   << std::dec  //
+-        ;
+-    xclClose(x.handle);
++    // x.handle is owned by XrtDeviceHandleImp; do not close context/handle here.
+     idx = idx + 1;
+   }
+ }
+-- 
+2.34.1

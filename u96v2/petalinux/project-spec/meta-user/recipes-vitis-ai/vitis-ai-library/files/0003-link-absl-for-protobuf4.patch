@@ -1,0 +1,23 @@
+--- a/xnnpp/CMakeLists.txt
++++ b/xnnpp/CMakeLists.txt
+@@ -14,6 +14,8 @@
+ # the License.
+ #
+ 
++find_package(absl QUIET CONFIG)
++
+ set(PBF_NAME
+     anchor_generator
+     grid_anchor_generator
+@@ -251,6 +253,11 @@
+   glog::glog
+   ${OpenCV_LIBS})
+ 
++if(TARGET absl::absl_log AND TARGET absl::absl_check)
++  target_link_libraries(${COMPONENT_NAME} PUBLIC absl::absl_log
++                                                 absl::absl_check)
++endif()
++
+ target_include_directories(
+   ${COMPONENT_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+                            $<INSTALL_INTERFACE:include>)

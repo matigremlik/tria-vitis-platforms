@@ -1,0 +1,10 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -171,6 +171,7 @@
+              trace
+   REQUIRED)
+ find_package(Protobuf 3.4.0 REQUIRED)
++find_package(absl QUIET CONFIG)
+ find_package(Eigen3 REQUIRED)
+ find_package(Xrt MODULE)
+ find_package(OpenCV COMPONENTS opencv_core opencv_video opencv_videoio

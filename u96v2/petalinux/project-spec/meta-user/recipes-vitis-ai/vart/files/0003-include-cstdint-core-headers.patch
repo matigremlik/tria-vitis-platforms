@@ -1,0 +1,30 @@
+From 8c0c0d3471b530f4e5e1f0f2e97ea1dd032e3a9f Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Sat, 7 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: include cstdint in core headers
+
+GCC 13 rejects these headers when fixed-width integer types are referenced
+without including <cstdint> explicitly.
+---
+--- a/runner/include/vitis/ai/tensor.hpp
++++ b/runner/include/vitis/ai/tensor.hpp
+@@ -15,6 +15,7 @@
+  */
+ #pragma once
+ 
++#include <cstdint>
+ #include <string>
+ #include <vector>
+ 
+--- a/util/include/vitis/ai/parse_value.hpp
++++ b/util/include/vitis/ai/parse_value.hpp
+@@ -15,6 +15,7 @@
+  */
+ #pragma once
+ #include <cassert>
++#include <cstdint>
+ #include <sstream>
+ namespace vitis {
+ namespace ai {
+-- 
+2.34.1

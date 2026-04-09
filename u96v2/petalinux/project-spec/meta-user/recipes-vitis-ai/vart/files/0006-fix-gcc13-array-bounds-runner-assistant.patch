@@ -1,0 +1,26 @@
+From 7a1b7a26c13a9b4a15bc42417d8cf7f6dca8f9b0 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Sat, 7 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: avoid GCC13 array-bounds false positive in runner-assistant
+
+GCC 13 can emit a false-positive -Warray-bounds diagnostic when an empty
+std::vector<int> is copied into by-value TensorBuffer APIs in this path.
+
+Pass a temporary empty vector directly to avoid the problematic copy path.
+---
+--- a/dpu-controller/runner-assistant/src/batch_tensor_buffer.cpp
++++ b/dpu-controller/runner-assistant/src/batch_tensor_buffer.cpp
+@@ -106,9 +106,9 @@ std::pair<uint64_t, size_t> BatchTensorBuffer::xdata(
+     const std::vector<int>& idx, int is_phy) {
+   if (idx.empty()) {
+     if (is_phy) {
+-      return tensor_buffers_[0]->data_phy(idx);
++      return tensor_buffers_[0]->data_phy(std::vector<int>{});
+     } else {
+-      return tensor_buffers_[0]->data(idx);
++      return tensor_buffers_[0]->data(std::vector<int>{});
+     }
+   }
+   auto tb_pair = get_tb_idx(idx[0]);
+-- 
+2.34.1

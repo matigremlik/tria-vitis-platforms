@@ -1,0 +1,39 @@
+From 452f7747e0b936cb2be313d92edc8f387d27552f Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Sat, 7 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: include cstdint in trace headers
+
+GCC 13 requires fixed-width integer types to come from <cstdint>.
+---
+--- a/trace/include/vitis/ai/event.hpp
++++ b/trace/include/vitis/ai/event.hpp
+@@ -15,6 +15,7 @@
+  */
+ 
+ #pragma once
++#include <cstdint>
+ #include <stdlib.h>
+ #include <iostream>
+ #include <map>
+--- a/trace/include/vitis/ai/payload.hpp
++++ b/trace/include/vitis/ai/payload.hpp
+@@ -15,6 +15,7 @@
+  */
+ 
+ #pragma once
++#include <cstdint>
+ #include <stdlib.h>
+ #include <iostream>
+ #include <map>
+--- a/trace/include/vitis/ai/traceclass.hpp
++++ b/trace/include/vitis/ai/traceclass.hpp
+@@ -15,6 +15,7 @@
+  */
+ 
+ #pragma once
++#include <cstdint>
+ #include <assert.h>
+ #include <stdlib.h>
+ #include <algorithm>
+-- 
+2.34.1

@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Fri, 06 Feb 2026 00:00:00 -0000
+Subject: [PATCH] xir: fix pybind11 include path for cross builds
+
+Upstream-Status: Inappropriate [embedded-specific]
+
+---
+ unilog/cmake/vai_add_pybind11_module.cmake | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/unilog/cmake/vai_add_pybind11_module.cmake
++++ b/unilog/cmake/vai_add_pybind11_module.cmake
+@@ -28,6 +28,7 @@ if(BUILD_PYTHON)
+     find_path(
+       _PYBIND11_PATH pybind11
+       HINTS
++        ${CMAKE_SYSROOT}/usr/include
+         /usr/include/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}m
+         /usr/include/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR})

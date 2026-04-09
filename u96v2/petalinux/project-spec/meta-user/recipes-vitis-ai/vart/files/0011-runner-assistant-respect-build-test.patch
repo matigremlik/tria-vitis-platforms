@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Mon, 09 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: build runner-assistant tests only when BUILD_TEST is ON
+
+The runner-assistant CMake file always builds test executables, even when
+Yocto passes -DBUILD_TEST=OFF. Under XRT 2024.2, those test binaries pull
+legacy xcl* symbols (xclOpen/xclClose/xclAllocBO/xclFreeBO) and fail link
+with hidden-symbol errors.
+
+Gate these test targets behind BUILD_TEST so production builds behave as
+requested by recipe configuration.
+
+Upstream-Status: Inappropriate [Yocto build configuration]
+---
+--- a/dpu-controller/runner-assistant/CMakeLists.txt
++++ b/dpu-controller/runner-assistant/CMakeLists.txt
+@@ -70,16 +70,17 @@
+   NAMESPACE ${PROJECT_NAME}::
+   COMPONENT dpu
+   DESTINATION share/cmake/${PROJECT_NAME})
+-
+-add_executable(test_batch_tensor_buffer test/test_batch_tensor_buffer.cpp)
+-target_link_libraries(test_batch_tensor_buffer)
+-
+-if(XRT_FOUND)
+-  add_executable(test_xrt_bo_tensor_buffer test/test_xrt_bo_tensor_buffer.cpp)
+-  target_link_libraries(test_xrt_bo_tensor_buffer ${COMPONENT_NAME}
+-                        XRT::xrt_core XRT::xrt_coreutil ${PROJECT_NAME}::util)
+-endif(XRT_FOUND)
+-
+-add_executable(test_allocator test/test_allocator.cpp)
+-target_link_libraries(test_allocator ${COMPONENT_NAME} ${PROJECT_NAME}::util
+-                      ${CMAKE_THREAD_LIBS_INIT})
++if(BUILD_TEST)
++  add_executable(test_batch_tensor_buffer test/test_batch_tensor_buffer.cpp)
++  target_link_libraries(test_batch_tensor_buffer)
++
++  if(XRT_FOUND)
++    add_executable(test_xrt_bo_tensor_buffer test/test_xrt_bo_tensor_buffer.cpp)
++    target_link_libraries(test_xrt_bo_tensor_buffer ${COMPONENT_NAME}
++                          XRT::xrt_core XRT::xrt_coreutil ${PROJECT_NAME}::util)
++  endif(XRT_FOUND)
++
++  add_executable(test_allocator test/test_allocator.cpp)
++  target_link_libraries(test_allocator ${COMPONENT_NAME} ${PROJECT_NAME}::util
++                        ${CMAKE_THREAD_LIBS_INIT})
++endif(BUILD_TEST)
+-- 
+2.34.1

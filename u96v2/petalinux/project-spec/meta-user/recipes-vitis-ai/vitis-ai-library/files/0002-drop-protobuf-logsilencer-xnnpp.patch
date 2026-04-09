@@ -1,0 +1,22 @@
+diff --git a/src/vai_library/xnnpp/src/tfssd/tfssd_post.cpp b/src/vai_library/xnnpp/src/tfssd/tfssd_post.cpp
+index 5f747850d..e50717411 100644
+--- a/xnnpp/src/tfssd/tfssd_post.cpp
++++ b/xnnpp/src/tfssd/tfssd_post.cpp
+@@ -224,17 +224,11 @@ TFSSDPost::TFSSDPost(
+      LOG(FATAL) << "parse error for tensorflow offical config file: " << cfgpath;
+   }
+ 
+-  google::protobuf::LogSilencer* s1 = new google::protobuf::LogSilencer;
+-  if (0) {
+-    std::cerr << "suppress warning of unused variable " << s1 << std::endl;
+-  }
+-
+   object_detection::protos::TrainEvalPipelineConfig tfcfg;
+   auto ok = google::protobuf::TextFormat::ParseFromString(text, &tfcfg);
+   if (!ok) {
+     LOG(FATAL) << "parse error for tensorflow offical config file: " << cfgpath;
+   }
+-  delete s1;
+ 
+   num_classes_ = (tfcfg.model().ssd().num_classes() + 1);
+   score_converter_ =

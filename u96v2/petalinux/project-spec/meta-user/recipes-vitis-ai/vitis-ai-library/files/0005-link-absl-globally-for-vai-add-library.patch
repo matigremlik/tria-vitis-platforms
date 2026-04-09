@@ -1,0 +1,17 @@
+--- a/cmake/vitis_ai_library_common.cmake
++++ b/cmake/vitis_ai_library_common.cmake
+@@ -121,6 +121,14 @@
+   if(ARG_PRIVATE_REQUIRE)
+     target_link_libraries(${ARG_NAME} PRIVATE ${ARG_PRIVATE_REQUIRE})
+   endif(ARG_PRIVATE_REQUIRE)
++
++  # protobuf 4.x may require absl log/check symbols from generated code.
++  # Link these when available so protobuf-using components resolve cleanly.
++  if(TARGET absl::absl_log AND TARGET absl::absl_check)
++    target_link_libraries(${ARG_NAME} PRIVATE absl::absl_log
++                                              absl::absl_check)
++  endif()
++
+   # add public headers
+   if(ARG_PUBLIC_HEADER)
+     # suppress warning contains relative path in its INTERFACE_SOURCES:

@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Mon, 09 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: disable xrt-device-handle test binaries when BUILD_TEST=OFF
+
+On cross builds against newer XRT, legacy xcl* symbols are hidden and the
+standalone xrt-device-handle test executables fail to link. These are test
+artifacts only and should not be built for production rootfs builds.
+
+Respect BUILD_TEST for all xrt-device-handle test binaries.
+
+Upstream-Status: Inappropriate [Yocto cross-build packaging]
+---
+ xrt-device-handle/CMakeLists.txt | 26 +++++++++++++-------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/xrt-device-handle/CMakeLists.txt b/xrt-device-handle/CMakeLists.txt
+index a4cc5ca..d9f2e8a 100644
+--- a/xrt-device-handle/CMakeLists.txt
++++ b/xrt-device-handle/CMakeLists.txt
+@@ -148,11 +148,11 @@ else()
+ endif()
+ 
+ if(XRT_FOUND)
+-  add_executable(test_xrt_device_handle test/test_xrt_device_handle.cpp)
+-  target_link_libraries(test_xrt_device_handle ${COMPONENT_NAME} XRT::xrt_core
+-                        XRT::xrt_coreutil glog::glog)
+-  install(TARGETS test_xrt_device_handle DESTINATION bin)
+   if(BUILD_TEST)
++    add_executable(test_xrt_device_handle test/test_xrt_device_handle.cpp)
++    target_link_libraries(test_xrt_device_handle ${COMPONENT_NAME} XRT::xrt_core
++                          XRT::xrt_coreutil glog::glog)
++    install(TARGETS test_xrt_device_handle DESTINATION bin)
+ 
+     # add_executable(write_counter test/write_counter.cpp)
+     # target_link_libraries(write_counter ${COMPONENT_NAME} XRT::xrt_core
+@@ -163,15 +163,17 @@ if(XRT_FOUND)
+                           XRT::xrt_coreutil glog::glog)
+ 
+     if(NOT MSVC)
+-    add_executable(test_ecmd test/test_ecmd.cpp)
+-    target_link_libraries(test_ecmd ${COMPONENT_NAME} XRT::xrt_core
+-                          XRT::xrt_coreutil -lpthread)
++      add_executable(test_ecmd test/test_ecmd.cpp)
++      target_link_libraries(test_ecmd ${COMPONENT_NAME} XRT::xrt_core
++                            XRT::xrt_coreutil -lpthread)
+     endif(NOT MSVC)
++
+     add_executable(test_bin_stream test/test_bin_stream.cpp)
+     target_link_libraries(test_bin_stream ${COMPONENT_NAME} XRT::xrt_core
+                           XRT::xrt_coreutil glog::glog)
++
++    add_executable(test_alloc_bo test/test_alloc_bo.cpp)
++    target_link_libraries(test_alloc_bo ${COMPONENT_NAME} XRT::xrt_core
++                          XRT::xrt_coreutil glog::glog)
+   endif()
+-  add_executable(test_alloc_bo test/test_alloc_bo.cpp)
+-  target_link_libraries(test_alloc_bo ${COMPONENT_NAME} XRT::xrt_core
+-                        XRT::xrt_coreutil glog::glog)
+ endif()
+-- 
+2.34.1

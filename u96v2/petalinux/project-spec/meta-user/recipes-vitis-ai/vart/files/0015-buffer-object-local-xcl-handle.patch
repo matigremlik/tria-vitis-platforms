@@ -1,0 +1,154 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MG <MateuszGremlik@gmail.com>
+Date: Sun, 22 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: use local xcl handle ownership in buffer-object
+
+buffer-object was using xcl handles owned by XrtDeviceHandleImp. With legacy
+xcl compat wrappers compiled into multiple DSOs, BO allocation can hit per-DSO
+handle ownership mismatch and fail with:
+
+  [XRT] ERROR: Handle is already in use: Invalid argument
+  [VART_XCL_ALLOC_FAIL] allocation failure
+
+Open and own a local xcl handle inside BufferObjectXrtEdgeImp, and use it for
+all BO/map/sync/read/write operations. This mirrors the same ownership model
+used by xrt_cu after compatibility fixes.
+
+Upstream-Status: Inappropriate [Yocto/XRT-2024.2 compatibility]
+---
+ buffer-object/src/buffer_object_xrt_imp.cpp | 27 +++++++++++++++++----------
+ buffer-object/src/buffer_object_xrt_imp.hpp |  1 +
+ 2 files changed, 18 insertions(+), 10 deletions(-)
+
+--- a/buffer-object/src/buffer_object_xrt_imp.hpp
++++ b/buffer-object/src/buffer_object_xrt_imp.hpp
+@@ -59,6 +59,7 @@
+  private:
+   const std::shared_ptr<xir::XrtDeviceHandle> holder_;
+   const device_info_t xrt_;
++  xclDeviceHandle xcl_handle_;
+   const size_t size_;
+   size_t bo_size_;
+   size_t bank_offset_;
+--- a/buffer-object/src/buffer_object_xrt_imp.cpp
++++ b/buffer-object/src/buffer_object_xrt_imp.cpp
+@@ -79,12 +79,16 @@
+     : BufferObject(),                                          //
+       holder_{xir::XrtDeviceHandle::get_instance()},           //
+       xrt_{find_xrt_info(holder_.get(), device_id, cu_name)},  //
++      xcl_handle_{xclOpen(device_id, nullptr, XCL_INFO)},         //
+       size_{size},                                             //
+       bank_offset_{0}
+ {
+   bo_size_ = size;
+   bank_offset_ = 0;
+ 
++  UNI_LOG_CHECK(xcl_handle_ != nullptr, VART_XCL_ALLOC_FAIL)
++      << "cannot open xcl handle for device " << device_id;
++
+   //This optimization utilizes the parallel access feature of DRAM banks to
+   //increase the memory access bandwidth for XVDPU multiple batches. This is
+   //achieved by assigning different bank ranges to the physical addresses of
+@@ -99,25 +103,25 @@
+     }
+   }
+ 
+-  bo_ = xclAllocBO(xrt_.handle, bo_size_, 0 /* not used according to xrt.h*/,
++  bo_ = xclAllocBO(xcl_handle_, bo_size_, 0 /* not used according to xrt.h*/,
+                    xrt_.flags);
+ 
+   UNI_LOG_CHECK(bo_ != XRT_NULL_BO, VART_XCL_ALLOC_FAIL)
+       << " allocation failure: "
+-      << " xrt_.handle " << xrt_.handle << " "
++      << " xcl_handle_ " << xcl_handle_ << " "
+       << "xrt_.device_id " << xrt_.device_id << " "                          //
+       << "size  " << size << " "                                             //
+       << "xrt_.flags " << std::hex << "0x" << xrt_.flags << std::dec << " "  //
+       ;
+   LOG_IF(INFO, ENV_PARAM(DEBUG_BUFFER_OBJECT))
+-      << " xrt_.handle " << xrt_.handle << " "
++      << " xcl_handle_ " << xcl_handle_ << " "
+       << "xrt_.device_id " << xrt_.device_id << " "                          //
+       << "xrt_.flags " << std::hex << "0x" << xrt_.flags << std::dec << " "  //
+       ;
+   if (xrt_.flags & XCL_BO_FLAGS_DEV_ONLY) {
+     data_ = nullptr;
+   } else {
+-    data_ = (int*)xclMapBO(xrt_.handle, bo_, true);  //
++    data_ = (int*)xclMapBO(xcl_handle_, bo_, true);  //
+     // XRT memory allocation is dynamic. After xclMapBO() , only the vritual
+     // address is returned, and the physical memory is not immediately applied.
+     // Only when a 'page falut' is generated when the memory is written for the
+@@ -134,10 +138,10 @@
+     // dirty data will appear in the cache, causeing some very difficult to
+     // debug errors. eg. DPU outputs random 64 bits zero .
+     // Execute cache flush ， write data to cache immediately.
+-    xclSyncBO(xrt_.handle, bo_, XCL_BO_SYNC_BO_TO_DEVICE, bo_size_, 0);
++    xclSyncBO(xcl_handle_, bo_, XCL_BO_SYNC_BO_TO_DEVICE, bo_size_, 0);
+     data_ = data_ + (bank_offset_ / 4);
+   }
+-  phy_ = get_physical_address(xrt_.handle, bo_, bank_offset_);
++  phy_ = get_physical_address(xcl_handle_, bo_, bank_offset_);
+   LOG_IF(INFO, ENV_PARAM(DEBUG_BUFFER_OBJECT))
+       << "create bufferobject "                                  //
+       << "phy_ " << std::hex << "0x" << phy_ << std::dec << " "  //
+@@ -148,9 +152,10 @@
+ 
+ BufferObjectXrtEdgeImp::~BufferObjectXrtEdgeImp() {
+   if (data_ != nullptr) {
+-    xclUnmapBO(xrt_.handle, bo_, data_ - (bank_offset_ / 4));
++    xclUnmapBO(xcl_handle_, bo_, data_ - (bank_offset_ / 4));
+   }
+-  xclFreeBO(xrt_.handle, bo_);
++  xclFreeBO(xcl_handle_, bo_);
++  xclClose(xcl_handle_);
+ }
+ 
+ const void* BufferObjectXrtEdgeImp::data_r() const {  //
+@@ -172,7 +177,7 @@
+     return;
+   }
+   auto sync =
+-      xclSyncBO(xrt_.handle, bo_, XCL_BO_SYNC_BO_FROM_DEVICE, size, offset + bank_offset_);
++      xclSyncBO(xcl_handle_, bo_, XCL_BO_SYNC_BO_FROM_DEVICE, size, offset + bank_offset_);
+ 
+   LOG_IF(INFO, ENV_PARAM(DEBUG_BUFFER_OBJECT))
+       << "phy " << std::hex << "0x" << phy_ << std::dec << " "  //
+@@ -191,7 +196,7 @@
+     return;
+   }
+   auto sync =
+-      xclSyncBO(xrt_.handle, bo_, XCL_BO_SYNC_BO_TO_DEVICE, size, offset + bank_offset_);
++      xclSyncBO(xcl_handle_, bo_, XCL_BO_SYNC_BO_TO_DEVICE, size, offset + bank_offset_);
+   LOG_IF(INFO, ENV_PARAM(DEBUG_BUFFER_OBJECT))
+       << "phy " << std::hex << "0x" << phy_ << std::dec << " "  //
+       << "offset " << std::hex << "0x" << offset << " "         //
+@@ -218,7 +223,7 @@
+   sync_for_write(offset, size);
+ #else
+   auto flags = 0;
+-  ok = xclUnmgdPwrite(xrt_.handle, flags, buf, size, phy(offset));
++  ok = xclUnmgdPwrite(xcl_handle_, flags, buf, size, phy(offset));
+ #endif
+   UNI_LOG_CHECK(ok == 0, VART_XCL_WRITE_ERROR)
+                   << "size " << size << " "      //
+@@ -241,7 +246,7 @@
+   memcpy(buf, static_cast<const char*>(data_r()) + offset, size);
+ #else
+   auto flags = 0;
+-  ret = xclUnmgdPread(xrt_.handle, flags, buf, size, phy(offset));
++  ret = xclUnmgdPread(xcl_handle_, flags, buf, size, phy(offset));
+ #endif
+   UNI_LOG_CHECK(ret == 0, VART_XCL_READ_ERROR)
+                    << "size " << size << " "      //
+@@ -250,7 +255,7 @@
+ }
+ 
+ xir::XclBo BufferObjectXrtEdgeImp::get_xcl_bo() const {
+-  return xir::XclBo{xrt_.handle, bo_};
++  return xir::XclBo{xcl_handle_, bo_};
+ }
+ }  // namespace
+ 
+-- 
+2.34.1

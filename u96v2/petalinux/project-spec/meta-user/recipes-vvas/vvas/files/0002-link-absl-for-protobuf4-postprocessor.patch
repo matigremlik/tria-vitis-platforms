@@ -1,0 +1,46 @@
+--- a/postprocessor/meson.build
++++ b/postprocessor/meson.build
+@@ -48,6 +48,34 @@
+ ]
+ 
+ protobuf_dep = cc.find_library('protobuf')
++
++# protobuf 4.x may require absl log/check symbols at link time.
++# Link commonly required absl components when available.
++absl_dep = []
++foreach absl_lib : [
++  'absl_log_internal_check_op',
++  'absl_log_internal_message',
++  'absl_log_internal_format',
++  'absl_log_internal_nullguard',
++  'absl_log_internal_conditions',
++  'absl_log_globals',
++  'absl_log_severity',
++  'absl_log_sink',
++  'absl_log_entry',
++  'absl_log_flags',
++  'absl_strings',
++  'absl_strings_internal',
++  'absl_string_view',
++  'absl_base',
++  'absl_throw_delegate',
++  'absl_raw_logging_internal',
++  'absl_int128',
++]
++  dep = cc.find_library(absl_lib, required: false)
++  if dep.found()
++    absl_dep += dep
++  endif
++endforeach
+ glog_dep = cc.find_library('glog')
+ jansson_dep = dependency('jansson', version : '>= 2.7', required: true)
+ opencv_dep = dependency('opencv4', version : '>=4.2.0', required: false)
+@@ -59,7 +87,7 @@
+   postprocessor_sources,
+   cpp_args : [vvas_core_args, '-std=c++17'],
+   include_directories : [configinc, core_common_inc, core_utils_inc],
+-  dependencies : [jansson_dep, core_common_dep, core_utils_dep, dpuinfer_dep, opencv_dep, protobuf_dep, glog_dep],
++  dependencies : [jansson_dep, core_common_dep, core_utils_dep, dpuinfer_dep, opencv_dep, protobuf_dep, glog_dep] + absl_dep,
+   install : true,
+ )
+ 

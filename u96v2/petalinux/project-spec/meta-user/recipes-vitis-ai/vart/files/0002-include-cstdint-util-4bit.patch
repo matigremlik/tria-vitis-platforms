@@ -1,0 +1,20 @@
+From 7044f30c53e5b0944a00f9d8a4c8c51e3fd6158e Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Sat, 7 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: include cstdint in util_4bit header
+
+GCC 13 rejects this header when fixed-width integer types are used without
+including <cstdint> explicitly.
+---
+--- a/util/include/vart/util_4bit.hpp
++++ b/util/include/vart/util_4bit.hpp
+@@ -15,6 +15,7 @@
+  */
+ #pragma once
+ 
++#include <cstdint>
+ #include <iomanip>
+ #include <iostream>
+ #include <sstream>
+-- 
+2.34.1

@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Fri, 06 Feb 2026 00:00:00 -0000
+Subject: [PATCH] xir: include cstdint for fixed-width ints
+
+---
+ src/xir/attrs/attr_def.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/src/xir/attrs/attr_def.cpp
++++ b/src/xir/attrs/attr_def.cpp
+@@ -17,6 +17,7 @@
+ 
+ #include <map>
+ #include <string>
++#include <cstdint>
+ #include <typeindex>
+ #include <typeinfo>
+ #include <vector>

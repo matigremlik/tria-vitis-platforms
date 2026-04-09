@@ -1,0 +1,46 @@
+--- a/dpuinfer/meson.build
++++ b/dpuinfer/meson.build
+@@ -246,6 +246,35 @@ else
+ endif
+ 
+ protobuf_dep = cc.find_library('protobuf')
++
++# protobuf 4.x may require absl log/check symbols at link time.
++# Link commonly required absl components when available.
++absl_dep = []
++foreach absl_lib : [
++  'absl_log_internal_check_op',
++  'absl_log_internal_message',
++  'absl_log_internal_format',
++  'absl_log_internal_nullguard',
++  'absl_log_internal_conditions',
++  'absl_log_globals',
++  'absl_log_severity',
++  'absl_log_sink',
++  'absl_log_entry',
++  'absl_log_flags',
++  'absl_strings',
++  'absl_strings_internal',
++  'absl_string_view',
++  'absl_base',
++  'absl_throw_delegate',
++  'absl_raw_logging_internal',
++  'absl_int128',
++]
++  dep = cc.find_library(absl_lib, required: false)
++  if dep.found()
++    absl_dep += dep
++  endif
++endforeach
++
+ glog_dep = cc.find_library('glog')
+ jansson_dep = dependency('jansson', version : '>= 2.7', required: true)
+ opencv_dep = dependency('opencv4', version : '>=4.2.0', required: false)
+@@ -261,7 +290,7 @@ vvascore_dpuinfer = library('vvascore_dpuinfer-' + core_version,
+   dpuinfer_sources,
+   cpp_args : [vvas_core_args, '-std=c++17'],
+   include_directories : [configinc, core_common_inc, core_utils_inc],
+-  dependencies : [xrt_dep, core_common_dep, core_utils_dep, jansson_dep, opencv_dep, dpuinfer_dep, protobuf_dep, glog_dep, classi_dep, vehicleclassi_dep, yolov2_dep, yolov3_dep, refinedet_dep, platedetect_dep, platenum_dep, facedetect_dep, effdetd2_dep, bcc_dep, ssd_dep, tfssd_dep, ultrafast_dep, roadline_dep, facefeat_dep, facelandmark_dep, posedetect_dep, reid_dep, segmentation_dep, rawtensor_dep],
++  dependencies : [xrt_dep, core_common_dep, core_utils_dep, jansson_dep, opencv_dep, dpuinfer_dep, protobuf_dep, glog_dep] + absl_dep + [classi_dep, vehicleclassi_dep, yolov2_dep, yolov3_dep, refinedet_dep, platedetect_dep, platenum_dep, facedetect_dep, effdetd2_dep, bcc_dep, ssd_dep, tfssd_dep, ultrafast_dep, roadline_dep, facefeat_dep, facelandmark_dep, posedetect_dep, reid_dep, segmentation_dep, rawtensor_dep],
+   install : true,
+ )

@@ -1,0 +1,26 @@
+From 3a4d0f4b0fdc09be9b16e47bbf8200b11f3bd3ad Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Sat, 7 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vitis-ai-library: remove protobuf LogSilencer usage
+
+google::protobuf::LogSilencer is not available with newer protobuf releases
+(e.g. 4.x in this Yocto/PetaLinux stack). The local pointer was only used to
+silence parser logs and is not required for correctness.
+
+Remove the LogSilencer allocation so model_config builds with modern protobuf.
+---
+--- a/model_config/src/config.cpp
++++ b/model_config/src/config.cpp
+@@ -124,10 +124,6 @@ static std::shared_ptr<vitis::ai::proto::DpuModelParamList> instance() {
+   static std::shared_ptr<vitis::ai::proto::DpuModelParamList> ret;
+   std::lock_guard<std::mutex> lock(*mutex.get());
+   if (!ret) {
+-    google::protobuf::LogSilencer* s1 = new google::protobuf::LogSilencer;
+-    if (0) {
+-      std::cerr << "suppress warning of unused variable " << s1 << std::endl;
+-    }
+     ret = create();
+   }
+   assert(ret != nullptr);
+-- 
+2.34.1

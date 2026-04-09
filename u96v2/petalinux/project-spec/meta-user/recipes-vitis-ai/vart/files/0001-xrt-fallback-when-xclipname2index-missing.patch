@@ -1,0 +1,70 @@
+From 85adfd4a38086691c508ec52db5e9e8d8a14c99d Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Sat, 7 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: handle XRT builds without linkable xclIPName2Index
+
+With newer XRT builds (e.g. 2024.2), xclIPName2Index may be declared in
+headers but not linkable from user applications. The current CMake check
+then fails and aborts configure.
+
+Allow configure to proceed and use a deterministic CU index fallback when
+xclIPName2Index is unavailable by parsing the CU instance suffix (for example
+'DPUCZDX8G_1' to index 1). If parsing fails, keep the original ordinal fallback.
+---
+diff -ruN /tmp/vart-old/xrt-device-handle/CMakeLists.txt /tmp/vart-new/xrt-device-handle/CMakeLists.txt
+--- a/xrt-device-handle/CMakeLists.txt	2026-02-10 10:03:45.827601836 +0000
++++ b/xrt-device-handle/CMakeLists.txt	2026-02-10 10:03:45.859601837 +0000
+@@ -63,8 +63,9 @@
+                                PRIVATE -DHAS_xclIPName2Index_2)
+   endif(HAS_xclIPName2Index_2)
+   if(NOT HAS_xclIPName2Index)
+-    message(FATAL_ERROR "cannot find xclIPName2Index")
+-  endif(NOT HAS_xclIPName2Index)
++    message(WARNING
++            "cannot find linkable xclIPName2Index; use CU-name index fallback")
++  endif()
+   target_sources(${COMPONENT_NAME} PRIVATE ${XCLBIN_SRCS})
+ endif(XRT_FOUND)
+ 
+diff -ruN /tmp/vart-old/xrt-device-handle/src/xrt_device_handle_imp.cpp /tmp/vart-new/xrt-device-handle/src/xrt_device_handle_imp.cpp
+--- a/xrt-device-handle/src/xrt_device_handle_imp.cpp	2026-02-10 10:03:45.831601835 +0000
++++ b/xrt-device-handle/src/xrt_device_handle_imp.cpp	2026-02-10 10:03:45.899601838 +0000
+@@ -295,14 +295,34 @@
+ #if _MSC_VER
+       cu_index = i;  // TODO: on windows xclIPName2Index is not defined.
+ #else
+-#  ifdef HAS_xclIPName2Index_3
++#  if defined(HAS_xclIPName2Index_3)
+       uint32_t dummy_id;
+       cu_index = xclIPName2Index(x.handle, cu_full_name.c_str(), &dummy_id);
+-#  endif
+-#  ifdef HAS_xclIPName2Index_2
++#  elif defined(HAS_xclIPName2Index_2)
+       cu_index = xclIPName2Index(x.handle, cu_full_name.c_str());
++#  else
++      auto fallback_index = static_cast<int>(i);
++      auto pos = cu_full_name.find_last_of("_");
++      if (pos != std::string::npos && (pos + 1u) < cu_full_name.size()) {
++        auto v = 0;
++        auto valid = true;
++        for (auto j = pos + 1u; j < cu_full_name.size(); ++j) {
++          auto ch = cu_full_name[j];
++          if (ch < '0' || ch > '9') {
++            valid = false;
++            break;
++          }
++          v = (v * 10) + (ch - '0');
++        }
++        if (valid) {
++          fallback_index = v;
++        }
++      }
++      cu_index = fallback_index;
++      LOG_IF(INFO, ENV_PARAM(DEBUG_XRT_DEVICE_HANDLE))
++          << "fallback cu_index=" << cu_index << " for " << cu_full_name;
++#  endif
+ #  endif
+-#endif
+ 
+       UNI_LOG_CHECK(cu_index != -1, VART_XRT_READ_CU_ERROR)
+           << " Cannot get cu_index. cu name=" << cu_full_name;

@@ -1,0 +1,80 @@
+From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Thu, 6 Feb 2026 00:00:00 -0000
+Subject: [PATCH] xrt: enable pyxrt on edge and make pybind11 lookup
+ yocto-friendly
+
+---
+ CMake/embedded_system.cmake    | 3 +++
+ python/pybind11/CMakeLists.txt | 19 ++++++++++++++-----
+ 2 files changed, 17 insertions(+), 5 deletions(-)
+
+diff --git a/CMake/embedded_system.cmake b/CMake/embedded_system.cmake
+index 86fb1a1f8..7b5d4d5a5 100644
+--- a/CMake/embedded_system.cmake
++++ b/CMake/embedded_system.cmake
+@@ -68,6 +68,9 @@ include (CMake/ccache.cmake)
+ 
+ add_subdirectory(runtime_src)
+ 
++# --- Python bindings ---
++xrt_add_subdirectory(python)
++
+ message("-- XRT version: ${XRT_VERSION_STRING}")
+ 
+ message("-- Preparing XRT pkg-config")
+diff --git a/python/pybind11/CMakeLists.txt b/python/pybind11/CMakeLists.txt
+index a1d57e4b6..b83c7f4b1 100644
+--- a/python/pybind11/CMakeLists.txt
++++ b/python/pybind11/CMakeLists.txt
+@@ -16,12 +16,14 @@ if (CMAKE_VERSION VERSION_LESS "3.12")
+   endif(PythonLibs_FOUND)
+   set(HAS_PYTHON ${PythonLibs_FOUND})
+ else()
+-  if (DEFINED ENV{VIRTUAL_ENV})
+-    # Virtual environment detected, use its Python
+-    set(Python3_EXECUTABLE $ENV{VIRTUAL_ENV}/bin/python3)
+-    message(STATUS "Virtual environment detected, using Python3: ${Python3_EXECUTABLE}")
+-  else()
+-    # No virtual environment, use system Python3
+-    # In alma 8.10 python3.11 comes as a dependency but still pybind11 is installed to default python3.
+-    set(Python3_EXECUTABLE /usr/bin/python3)
++  if (NOT DEFINED Python3_EXECUTABLE)
++    if (DEFINED ENV{VIRTUAL_ENV})
++      # Virtual environment detected, use its Python
++      set(Python3_EXECUTABLE $ENV{VIRTUAL_ENV}/bin/python3)
++      message(STATUS "Virtual environment detected, using Python3: ${Python3_EXECUTABLE}")
++    else()
++      # No virtual environment, use system Python3
++      # In alma 8.10 python3.11 comes as a dependency but still pybind11 is installed to default python3.
++      set(Python3_EXECUTABLE /usr/bin/python3)
++    endif()
+   endif()
+ 
+   find_package(Python3 COMPONENTS Development Interpreter)
+@@ -37,6 +39,9 @@ if (HAS_PYTHON)
+   if (${LINUX_FLAVOR} MATCHES "^(ubuntu|debian)")
+     SET(PKGDIR "dist-packages")
+   elseif (${LINUX_FLAVOR} MATCHES "^(rhel|centos|amzn|fedora|sles|almalinux)")
+     SET(PKGDIR "site-packages")
+   endif(${LINUX_FLAVOR} MATCHES "^(ubuntu|debian)")
++  if (NOT PKGDIR)
++    set(PKGDIR "site-packages")
++  endif()
+   find_package(pybind11 2.6.0 REQUIRED PATHS "$ENV{VIRTUAL_ENV}/lib/python${PYTHONLIBS_VERSION_MAJOR}.${PYTHONLIBS_VERSION_MINOR}/${PKGDIR}/pybind11" "/usr/local/lib/python${PYTHONLIBS_VERSION_MAJOR}.${PYTHONLIBS_VERSION_MINOR}/${PKGDIR}/pybind11" "/usr/lib/python${PYTHONLIBS_VERSION_MAJOR}.${PYTHONLIBS_VERSION_MINOR}/${PKGDIR}/pybind11")
+ 
+ endif(HAS_PYTHON)
+@@ -45,7 +50,11 @@ endif(HAS_PYTHON)
+ endif(HAS_PYTHON)
+ 
+ if (pybind11_FOUND)
+-  INCLUDE_DIRECTORIES(${PYTHON_INCLUDE_PATH})
++  if (PYTHON_INCLUDE_PATH)
++    INCLUDE_DIRECTORIES(${PYTHON_INCLUDE_PATH})
++  endif()
++  if (Python3_INCLUDE_DIRS)
++    INCLUDE_DIRECTORIES(${Python3_INCLUDE_DIRS})
++  endif()
+   pybind11_add_module(pyxrt src/pyxrt.cpp)
+   target_link_libraries(pyxrt PRIVATE xrt_coreutil uuid pthread)
+ 

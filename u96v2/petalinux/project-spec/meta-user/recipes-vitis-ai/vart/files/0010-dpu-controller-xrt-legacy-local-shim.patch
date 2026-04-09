@@ -1,0 +1,270 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Mon, 09 Feb 2026 00:00:00 +0000
+Subject: [PATCH] vart: satisfy hidden legacy xcl APIs in dpu-controller
+
+XRT 2024.2 marks deprecated xcl* APIs as hidden. dpu-controller references
+these symbols directly, so they must be defined inside the same shared object.
+
+Compile the existing compat source into dpu-controller, and implement legacy
+xcl wrappers in that source using the exported Zynq shim methods in
+libxrt_core. This resolves link errors for xclExecBuf/xclExecWait and related
+xcl* calls under --no-undefined.
+
+Upstream-Status: Inappropriate [Yocto/XRT-2024.2 compatibility]
+---
+--- a/dpu-controller/CMakeLists.txt
++++ b/dpu-controller/CMakeLists.txt
+@@ -47,6 +47,8 @@
+     HAS_xclIPSetReadRange)
+   list(APPEND MY_PROJECT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/xrt_cu.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/xrt_cu.cpp)
++  list(APPEND MY_PROJECT_SOURCES
++       ${CMAKE_CURRENT_SOURCE_DIR}/../xrt-device-handle/src/xrt_compat_legacy_api.cpp)
+ endif(XRT_FOUND)
+ if(XRT_FOUND)
+   list(
+--- a/dpu-controller/runner-assistant/CMakeLists.txt
++++ b/dpu-controller/runner-assistant/CMakeLists.txt
+@@ -36,6 +36,8 @@
+ if(XRT_FOUND)
+   target_link_libraries(${COMPONENT_NAME} PRIVATE XRT::xrt_core
+                                                   XRT::xrt_coreutil)
++  target_sources(${COMPONENT_NAME} PRIVATE
++                 ${CMAKE_CURRENT_SOURCE_DIR}/../../xrt-device-handle/src/xrt_compat_legacy_api.cpp)
+ endif(XRT_FOUND)
+ 
+ add_library(${PROJECT_NAME}::${COMPONENT_NAME} ALIAS ${COMPONENT_NAME})
+--- a/xrt-device-handle/src/xrt_compat_legacy_api.cpp
++++ b/xrt-device-handle/src/xrt_compat_legacy_api.cpp
+@@ -12,54 +12,39 @@
+  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  */
+ #include <xrt.h>
+-#include <xrt/xrt_bo.h>
+ #include <xrt/xrt_device.h>
+ 
+ #include <cstring>
+ #include <mutex>
+ #include <unordered_map>
+ 
++namespace xrt_core {
++class hwctx_handle;
++}
++
++namespace ZYNQ {
++class shim {
++ public:
++  xclBufferHandle xclAllocBO(size_t size, unsigned int flags, xrt_core::hwctx_handle* hwctx);
++  void xclFreeBO(xclBufferHandle boHandle);
++  void* xclMapBO(xclBufferHandle boHandle, bool write);
++  int xclUnmapBO(xclBufferHandle boHandle, void* addr);
++  int xclSyncBO(xclBufferHandle boHandle, xclBOSyncDirection dir, size_t size, size_t offset);
++  int xclGetBOProperties(xclBufferHandle boHandle, xclBOProperties* properties);
++  int xclOpenContext(const unsigned char* xclbinId, unsigned int ipIndex, bool shared);
++  int xclCloseContext(const unsigned char* xclbinId, unsigned int ipIndex);
++  int xclIPSetReadRange(uint32_t ipIndex, uint32_t start, uint32_t size);
++  int xclExecBuf(xclBufferHandle cmdBO);
++  int xclExecWait(int timeoutMilliSec);
++};
++}  // namespace ZYNQ
++
+ namespace {
+ std::mutex g_compat_lock;
+ std::unordered_map<xclDeviceHandle, xrtDeviceHandle> g_open_handles;
+-std::unordered_map<xclBufferHandle, xrtBufferHandle> g_bo_handles;
+-std::unordered_map<xclBufferHandle, uint64_t> g_bo_sizes;
+-std::unordered_map<xclBufferHandle, uint32_t> g_bo_flags;
+-xclBufferHandle g_next_bo = 1u;
+ 
+-static xrtDeviceHandle get_or_open_device(xclDeviceHandle handle) {
+-  if (!handle) {
+-    return nullptr;
+-  }
+-  std::lock_guard<std::mutex> guard(g_compat_lock);
+-  auto it = g_open_handles.find(handle);
+-  if (it != g_open_handles.end()) {
+-    return it->second;
+-  }
+-  auto dh = xrtDeviceOpenFromXcl(handle);
+-  if (dh) {
+-    g_open_handles[handle] = dh;
+-  }
+-  return dh;
+-}
+-
+-static xclBufferHandle alloc_bo_id_locked() {
+-  for (uint64_t i = 0; i < 0xFFFFFFFFull; ++i) {
+-    auto cand = g_next_bo++;
+-    if (cand == XRT_NULL_BO) {
+-      continue;
+-    }
+-    if (g_bo_handles.find(cand) == g_bo_handles.end()) {
+-      return cand;
+-    }
+-  }
+-  return XRT_NULL_BO;
+-}
+-
+-static xrtBufferHandle lookup_bo(xclBufferHandle bo) {
+-  std::lock_guard<std::mutex> guard(g_compat_lock);
+-  auto it = g_bo_handles.find(bo);
+-  return (it == g_bo_handles.end()) ? nullptr : it->second;
++static ZYNQ::shim* get_shim(xclDeviceHandle handle) {
++  return reinterpret_cast<ZYNQ::shim*>(handle);
+ }
+ }  // namespace
+ 
+@@ -128,104 +113,76 @@
+ XCL_DRIVER_DLLHIDDEN xclBufferHandle xclAllocBO(
+     xclDeviceHandle handle, size_t size, int unused, unsigned int flags) {
+   (void)unused;
+-  auto dh = get_or_open_device(handle);
+-  if (!dh) {
++  auto shim = get_shim(handle);
++  if (!shim) {
+     return XRT_NULL_BO;
+   }
+-
+-  auto grp = static_cast<xrtMemoryGroup>(flags & 0xFFFFu);
+-  auto xrt_flags = static_cast<xrtBufferFlags>(flags & ~XRT_BO_FLAGS_MEMIDX_MASK);
+-  auto bh = xrtBOAlloc(dh, size, xrt_flags, grp);
+-  if (!bh) {
+-    return XRT_NULL_BO;
+-  }
+-
+-  std::lock_guard<std::mutex> guard(g_compat_lock);
+-  auto bo = alloc_bo_id_locked();
+-  if (bo == XRT_NULL_BO) {
+-    (void)xrtBOFree(bh);
+-    return XRT_NULL_BO;
+-  }
+-  g_bo_handles[bo] = bh;
+-  g_bo_sizes[bo] = size;
+-  g_bo_flags[bo] = flags;
+-  return bo;
++  return shim->xclAllocBO(size, flags, nullptr);
+ }
+ 
+-XCL_DRIVER_DLLHIDDEN void xclFreeBO(xclDeviceHandle, xclBufferHandle boHandle) {
+-  xrtBufferHandle bh = nullptr;
+-  {
+-    std::lock_guard<std::mutex> guard(g_compat_lock);
+-    auto it = g_bo_handles.find(boHandle);
+-    if (it == g_bo_handles.end()) {
+-      return;
+-    }
+-    bh = it->second;
+-    g_bo_handles.erase(it);
+-    g_bo_sizes.erase(boHandle);
+-    g_bo_flags.erase(boHandle);
++XCL_DRIVER_DLLHIDDEN void xclFreeBO(xclDeviceHandle handle, xclBufferHandle boHandle) {
++  auto shim = get_shim(handle);
++  if (!shim) {
++    return;
+   }
+-  (void)xrtBOFree(bh);
++  shim->xclFreeBO(boHandle);
+ }
+ 
+-XCL_DRIVER_DLLHIDDEN void* xclMapBO(xclDeviceHandle, xclBufferHandle boHandle, bool) {
+-  auto bh = lookup_bo(boHandle);
+-  if (!bh) {
++XCL_DRIVER_DLLHIDDEN void* xclMapBO(xclDeviceHandle handle, xclBufferHandle boHandle, bool write) {
++  auto shim = get_shim(handle);
++  if (!shim) {
+     return nullptr;
+   }
+-  return xrtBOMap(bh);
++  return shim->xclMapBO(boHandle, write);
+ }
+ 
+-XCL_DRIVER_DLLHIDDEN int xclUnmapBO(xclDeviceHandle, xclBufferHandle, void*) {
+-  return 0;
++XCL_DRIVER_DLLHIDDEN int xclUnmapBO(xclDeviceHandle handle, xclBufferHandle boHandle, void* addr) {
++  auto shim = get_shim(handle);
++  return shim ? shim->xclUnmapBO(boHandle, addr) : -1;
+ }
+ 
+ XCL_DRIVER_DLLHIDDEN int xclSyncBO(
+-    xclDeviceHandle, xclBufferHandle boHandle, enum xclBOSyncDirection dir, size_t size,
++    xclDeviceHandle handle,
++    xclBufferHandle boHandle,
++    enum xclBOSyncDirection dir,
++    size_t size,
+     size_t offset) {
+-  auto bh = lookup_bo(boHandle);
+-  if (!bh) {
+-    return -1;
+-  }
+-  return xrtBOSync(bh, dir, size, offset);
++  auto shim = get_shim(handle);
++  return shim ? shim->xclSyncBO(boHandle, dir, size, offset) : -1;
+ }
+ 
+ XCL_DRIVER_DLLHIDDEN int xclGetBOProperties(
+-    xclDeviceHandle, xclBufferHandle boHandle, struct xclBOProperties* properties) {
+-  if (!properties) {
+-    return -1;
+-  }
++    xclDeviceHandle handle, xclBufferHandle boHandle, struct xclBOProperties* properties) {
++  auto shim = get_shim(handle);
++  return shim ? shim->xclGetBOProperties(boHandle, properties) : -1;
++}
+ 
+-  xrtBufferHandle bh = nullptr;
+-  uint64_t size = 0;
+-  uint32_t flags = 0;
+-  {
+-    std::lock_guard<std::mutex> guard(g_compat_lock);
+-    auto it = g_bo_handles.find(boHandle);
+-    if (it == g_bo_handles.end()) {
+-      return -1;
+-    }
+-    bh = it->second;
+-    size = g_bo_sizes[boHandle];
+-    flags = g_bo_flags[boHandle];
+-  }
++XCL_DRIVER_DLLHIDDEN int xclOpenContext(
++    xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipIndex, bool shared) {
++  auto shim = get_shim(handle);
++  return shim ? shim->xclOpenContext(xclbinId, ipIndex, shared) : -1;
++}
+ 
+-  std::memset(properties, 0, sizeof(*properties));
+-  properties->handle = boHandle;
+-  properties->flags = flags;
+-  properties->size = size;
+-  properties->paddr = xrtBOAddress(bh);
+-  return 0;
++XCL_DRIVER_DLLHIDDEN int xclCloseContext(
++    xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipIndex) {
++  auto shim = get_shim(handle);
++  return shim ? shim->xclCloseContext(xclbinId, ipIndex) : -1;
+ }
+ 
+-XCL_DRIVER_DLLHIDDEN int xclOpenContext(xclDeviceHandle, const xuid_t, unsigned int, bool) {
+-  return 0;
++XCL_DRIVER_DLLHIDDEN int xclIPSetReadRange(
++    xclDeviceHandle handle, uint32_t ipIndex, uint32_t start, uint32_t size) {
++  auto shim = get_shim(handle);
++  return shim ? shim->xclIPSetReadRange(ipIndex, start, size) : -1;
+ }
+-XCL_DRIVER_DLLHIDDEN int xclCloseContext(xclDeviceHandle, const xuid_t, unsigned int) {
+-  return 0;
++
++XCL_DRIVER_DLLHIDDEN int xclExecBuf(xclDeviceHandle handle, xclBufferHandle cmdBO) {
++  auto shim = get_shim(handle);
++  return shim ? shim->xclExecBuf(cmdBO) : -1;
+ }
+-XCL_DRIVER_DLLHIDDEN int xclIPSetReadRange(xclDeviceHandle, uint32_t, uint32_t, uint32_t) {
+-  return 0;
++
++XCL_DRIVER_DLLHIDDEN int xclExecWait(xclDeviceHandle handle, int timeoutMilliSec) {
++  auto shim = get_shim(handle);
++  return shim ? shim->xclExecWait(timeoutMilliSec) : -1;
+ }
+ 
+ }  // extern "C"
+-- 
+2.34.1

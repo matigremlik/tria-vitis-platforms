@@ -1,0 +1,24 @@
+--- a/cmake/vitis_ai_library_common.cmake
++++ b/cmake/vitis_ai_library_common.cmake
+@@ -194,6 +194,10 @@
+ endfunction(vai_add_library)
+ 
+ function(vai_add_test name)
++  if(DEFINED BUILD_TEST AND NOT BUILD_TEST)
++    return()
++  endif()
++
+   set(options "")
+   set(oneValueArgs ENABLE_IF)
+   set(multiValueArgs REQUIRE)
+@@ -225,6 +229,10 @@
+ endfunction(vai_add_test)
+ 
+ function(vai_add_sample name)
++  if(DEFINED BUILD_TEST AND NOT BUILD_TEST)
++    return()
++  endif()
++
+   set(options "")
+   set(oneValueArgs DESTINATION)
+   set(multiValueArgs REQUIRE SRCS BUILD)

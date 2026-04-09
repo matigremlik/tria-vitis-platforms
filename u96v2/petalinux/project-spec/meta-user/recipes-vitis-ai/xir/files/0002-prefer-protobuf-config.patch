@@ -1,0 +1,36 @@
+From 2ac7ce986f7c0f0e7ec61ebf3e7f4de41f708ad1 Mon Sep 17 00:00:00 2001
+From: MG <mateuszGremlik@gmail.com>
+Date: Sat, 7 Feb 2026 00:00:00 +0000
+Subject: [PATCH] xir: prefer protobuf config package for transitive deps
+
+Newer protobuf releases expose required Abseil dependencies via the
+protobuf CMake config package. Module-mode FindProtobuf can resolve to a
+plain libprotobuf path without those transitive link dependencies,
+causing undefined absl symbols at link time.
+
+Prefer CONFIG mode first while keeping a fallback to module mode.
+---
+ CMakeLists.txt | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 70ec2a9..5012675 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -37,7 +37,13 @@ if(NOT TARGET unilog::unilog)
+ endif()
+ 
+ find_package(Boost REQUIRED)
+-find_package(Protobuf REQUIRED)
++
++set(protobuf_MODULE_COMPATIBLE ON CACHE BOOL "")
++find_package(Protobuf CONFIG QUIET)
++if(NOT Protobuf_FOUND)
++  find_package(Protobuf REQUIRED)
++endif()
++
+ find_package(Threads REQUIRED)
+ 
+ add_subdirectory(src)
+-- 
+2.34.1
