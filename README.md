@@ -1,8 +1,9 @@
 # Important Info
 Based on Tria Vitis Platforms original BSP availible here: https://github.com/AlbertaBeef/tria-vitis-platforms/tree/2024.2
-Fixes a fair few issues present in the Ultra96 build paths due to depreciation and version incompatibility. Also by default includes 4 extra overlays that have an DPU and various HLS pre-processing kernels included. 
+Fixes a fair few issues present in the Ultra96 build paths due to depreciation and version incompatibility. 
+Also by default includes 4 extra overlays that have an DPU and various HLS pre-processing kernels included. 
 
-Report om the work contained within and on the background, availible at: [View the PDF](Report.pdf)
+Report on the work contained within, and on the background, availible at: [View the PDF](Report.pdf)
 
 Running (petalinux24) petalinux-build in u96v2/petalinux will create a distro with all the overlays included. Generate the SD Card as below.
 
@@ -44,7 +45,7 @@ dnsmasq --port=0 --interface=wlan0 --bind-interfaces \
   --dhcp-leasefile=/var/lib/misc/udhcpd.leases \
   --pid-file=/var/run/dnsmasq-wlan0.pid
 
-  # Original Read-me Bellow:
+# Original Read-me Bellow:
 
 # Overview
 Tria Vitis 2024.2 platforms and overlays.
